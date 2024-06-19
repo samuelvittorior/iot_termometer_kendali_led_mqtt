@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Real-Time Chart with WebSocket</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+  </head>
+  <body>
+    <center>
+      <h2>Suhu</h2>
+    </center>
+    <div style="width: 75%; margin: auto">
+      <canvas id="realtimeChartSuhu"></canvas>
+    </div>
+    <div style="width: 75%; margin: auto; text-align: center">
+      <h2>Suhu saat ini: <span id="suhuValue">0</span></h2>
+    </div>
+
+    <center>
+      <h2>Kelembaban</h2>
+    </center>
+    <div style="width: 75%; margin: auto">
+      <canvas id="realtimeChartKelembaban"></canvas>
+    </div>
+    <div style="width: 75%; margin: auto; text-align: center">
+      <h2>Kelembaban saat ini: <span id="kelembabanValue">0</span></h2>
+    </div>
+
+    <!-- Kontrol LED -->
+    <center>
+      <h2>Kontrol LED</h2>
+      <button onclick="toggleLED('LED1', 1)">Nyalakan LED 1</button>
+      <button onclick="toggleLED('LED1', 0)">Matikan LED 1</button>
+      <button onclick="toggleLED('LED2', 1)">Nyalakan LED 2</button>
+      <button onclick="toggleLED('LED2', 0)">Matikan LED 2</button>
+      <button onclick="toggleLED('LED3', 1)">Nyalakan LED 3</button>
+      <button onclick="toggleLED('LED3', 0)">Matikan LED 3</button>
+      <button onclick="toggleLED('ALL', 1)">Nyalakan Semua LED</button>
+      <button onclick="toggleLED('ALL', 0)">Matikan Semua LED</button>
+    </center>
+
+    <script>
+      // Create chart contexts
+      const ctxSuhu = document
+        .getElementById("realtimeChartSuhu")
+        .getContext("2d");
+      const ctxKelembaban = document
+        .getElementById("realtimeChartKelembaban")
+        .getContext("2d");
+
+      // Initialize suhu chart
+      const realtimeChartSuhu = new Chart(ctxSuhu, {
+        type: "line",
+        data: {
+          labels: [], // Timestamps will be added here
+          datasets: [
+            {
+              label: "Suhu",
+              data: [],
+              borderColor: "rgba(75, 192, 192, 1)",
+              borderWidth: 1,
+              fill: false,
+            },
+          ],
+        },
+        options: {
+          scales: {
+            x: {
+              type: "time", // Set scale to time
+              time: {
+                unit: "second",
+                displayFormats: {
+                  second: "h:mm:ss a", // Custom format for display
+                },
+              },
+            },
+            y: {
+              beginAtZero: true,
+            },
+          },
+        },
+      });
+
+      // Initialize kelembaban chart
+      const realtimeChartKelembaban = new Chart(ctxKelembaban, {
+        type: "line",
+        data: {
+          labels: [], // Timestamps will be added here
+          datasets: [
+            {
+              label: "Kelembaban",
+              data: [],
+              borderColor: "rgba(153, 102, 25, 1)",
+              borderWidth: 1,
+              fill: false,
+            },
+          ],
+        },
+        options: {
+          scales: {
+            x: {
+              type: "time", // Set scale to time
+              time: {
+                unit: "second",
+                displayFormats: {
+                  second: "h:mm:ss a", // Custom format for display
+                },
+              },
+            },
+            y: {
+              beginAtZero: true,
+            },
+          },
+        },
+      });
+
+      // Connect to WebSocket
+      const socket = new WebSocket("ws://localhost:8777");
+
+      socket.onmessage = function (event) {
+        const data = JSON.parse(event.data);
+
+        // Check if the data is for the desired NIM
+        if (data.nim === "G.231.21.0187") {
+          const latestSuhu = data.suhu;
+          const latestKelembaban = data.kelembaban;
+
+          // Add new data to suhu chart
+          if (latestSuhu !== undefined) {
+            const now = new Date();
+            realtimeChartSuhu.data.labels.push(now);
+            realtimeChartSuhu.data.datasets[0].data.push({
+              x: now,
+              y: latestSuhu,
+            });
+
+            // Keep only the last 50 data points
+            if (realtimeChartSuhu.data.labels.length > 50) {
+              realtimeChartSuhu.data.labels.shift();
+              realtimeChartSuhu.data.datasets[0].data.shift();
+            }
+
+            // Update suhu chart
+            realtimeChartSuhu.update();
+
+            // Update the displayed suhu value
+            document.getElementById("suhuValue").innerText =
+              latestSuhu.toFixed(2);
+          }
+
+          // Add new data to kelembaban chart
+          if (latestKelembaban !== undefined) {
+            const now = new Date();
+            realtimeChartKelembaban.data.labels.push(now);
+            realtimeChartKelembaban.data.datasets[0].data.push({
+              x: now,
+              y: latestKelembaban,
+            });
+
+            // Keep only the last 50 data points
+            if (realtimeChartKelembaban.data.labels.length > 50) {
+              realtimeChartKelembaban.data.labels.shift();
+              realtimeChartKelembaban.data.datasets[0].data.shift();
+            }
+
+            // Update kelembaban chart
+            realtimeChartKelembaban.update();
+
+            // Update the displayed kelembaban value
+            document.getElementById("kelembabanValue").innerText =
+              latestKelembaban.toFixed(2);
+          }
+        }
+      };
+
+      socket.onopen = function () {
+        console.log("WebSocket connection established");
+      };
+
+      socket.onclose = function () {
+        console.log("WebSocket connection closed");
+      };
+
+      socket.onerror = function (error) {
+        console.error("WebSocket error:", error);
+      };
+
+      // Fungsi Pengendali LED
+      function toggleLED(led, kondisi) {
+        const message = {
+          nim: "G.231.21.0187",
+          messages: `${led}=${kondisi}`,
+        };
+        socket.send(JSON.stringify(message));
+      }
+    </script>
+  </body>
+</html>
